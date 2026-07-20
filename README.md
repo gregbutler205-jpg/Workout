@@ -53,3 +53,5 @@ Use **More → Export Spreadsheet CSV**. The CSV uses one row per strength set a
 ## Important MVP limitation
 
 The app does not directly import Apple Health or Apple Watch data. Those values are entered manually after each workout. Direct HealthKit integration requires a native iPhone app.
+
+
