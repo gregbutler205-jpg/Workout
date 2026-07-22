@@ -19,7 +19,7 @@ const EXERCISES = [
 
 const defaultState = {
   version:1,
-  settings:Object.fromEntries(EXERCISES.map(e=>[e.name,{weight:"",seat:"",backPad:"",start:"",other:""}])),
+  settings:Object.fromEntries(EXERCISES.map(e=>[e.name,{weight:"",seat:"",backPad:"",leg:"",start:"",other:""}])),
   weekly:{},
   workouts:[],
   activeWorkout:null,
@@ -48,6 +48,15 @@ function durationText(ms){
   return h?`${h}:${String(m).padStart(2,"0")}:${String(sec).padStart(2,"0")}`:`${m}:${String(sec).padStart(2,"0")}`;
 }
 function toast(msg){const t=document.createElement("div");t.className="toast";t.textContent=msg;document.body.append(t);setTimeout(()=>t.remove(),1800)}
+function playTimerAlert(){
+  try{
+    const AudioCtx=window.AudioContext||window.webkitAudioContext;
+    const ctx=new AudioCtx(); const now=ctx.currentTime;
+    [0,.22,.44].forEach(offset=>{const osc=ctx.createOscillator();const gain=ctx.createGain();osc.type="sine";osc.frequency.value=880;gain.gain.setValueAtTime(.0001,now+offset);gain.gain.exponentialRampToValueAtTime(.22,now+offset+.01);gain.gain.exponentialRampToValueAtTime(.0001,now+offset+.16);osc.connect(gain);gain.connect(ctx.destination);osc.start(now+offset);osc.stop(now+offset+.18)});
+    setTimeout(()=>ctx.close(),1200);
+  }catch{}
+  navigator.vibrate?.([250,120,250,120,350]);
+}
 function setHeader(title,subtitle="",back=false){$("#screenTitle").textContent=title;$("#screenSubtitle").textContent=subtitle;$("#backBtn").classList.toggle("hidden",!back)}
 function navigate(name){currentScreen=name;document.querySelectorAll(".nav-btn").forEach(b=>b.classList.toggle("active",b.dataset.screen===name));render()}
 
@@ -138,7 +147,7 @@ function renderExerciseEntry(){
     <div class="card">
       <div class="row"><div><div class="small muted">Current Weight / Plate</div><div class="big-number"><input id="weight" type="number" inputmode="decimal" value="${ex.weight}" style="width:130px;font-size:30px;text-align:center"> lb</div></div>
       <button class="btn outline" id="settingsBtn" style="width:auto">Machine Settings</button></div>
-      <div class="small muted" style="margin-top:8px">${settings.seat?`Seat ${settings.seat} • `:""}${settings.backPad?`Back ${settings.backPad} • `:""}${settings.start?`Start ${settings.start}`:""}</div>
+      <div class="small muted" style="margin-top:8px">${settings.seat?`Seat ${settings.seat} • `:""}${settings.backPad?`Back ${settings.backPad} • `:""}${settings.leg?`Leg ${settings.leg} • `:""}${settings.start?`Start ${settings.start}`:""}</div>
     </div>
     <div class="card">
       <div class="set-grid header"><div>Set</div><div>Reps</div><div>20-sec rest</div></div>
@@ -169,7 +178,7 @@ function saveSet(s){
 }
 function startTimer(){
   stopTimer(); timerRemaining=20; timerPaused=false;
-  renderTimer(); timerId=setInterval(()=>{if(!timerPaused){timerRemaining--;renderTimer();if(timerRemaining<=0){stopTimer();navigator.vibrate?.([200,100,200]);toast("Rest complete")}}},1000);
+  renderTimer(); timerId=setInterval(()=>{if(!timerPaused){timerRemaining--;renderTimer();if(timerRemaining<=0){stopTimer();playTimerAlert();toast("Rest complete")}}},1000);
 }
 function renderTimer(){
   const a=$("#timerArea"); if(!a)return;
@@ -197,12 +206,15 @@ function completeExercise(){
 }
 function openResultModal(ex){
   const cls=ex.recommendation.toLowerCase();
+  const suggested=ex.recommendation==="Increase"?nextWeight(ex.weight,1):ex.recommendation==="Decrease"?nextWeight(ex.weight,-1):ex.weight;
   openModal("Exercise Result",`<div class="recommendation ${cls}">
     <div class="small">RECOMMENDATION</div><div class="big-number">${ex.recommendation.toUpperCase()}</div>
-    <div>${ex.recommendation==="Increase"?"Increase one plate next workout":ex.recommendation==="Decrease"?"Decrease one plate next workout":ex.recommendation==="Review"?"Review before changing weight":"Keep the same weight"}</div>
-  </div><div class="stack" style="margin-top:14px"><button class="btn green" id="acceptRec">Accept & Next Exercise</button><button class="btn outline" id="keepWeight">Keep Current Weight</button></div>`);
-  $("#acceptRec").onclick=()=>{if(ex.recommendation==="Increase")state.settings[ex.name].weight=nextWeight(ex.weight,1);else if(ex.recommendation==="Decrease")state.settings[ex.name].weight=nextWeight(ex.weight,-1);else state.settings[ex.name].weight=ex.weight;saveState();$("#modal").close();advanceExercise()};
-  $("#keepWeight").onclick=()=>{state.settings[ex.name].weight=ex.weight;saveState();$("#modal").close();advanceExercise()};
+    <div>${ex.recommendation==="Increase"?"You met the increase rule. Review and choose the weight for your next workout.":ex.recommendation==="Decrease"?"A set was below 5 reps. Review and choose a lower weight for your next workout.":ex.recommendation==="Review"?"Pain, skipped work, or incomplete data means no automatic increase.":"The progression rule suggests keeping the same weight."}</div>
+  </div><div class="card" style="margin-top:14px"><label>Weight for next workout<div class="weight-stepper"><button type="button" id="minusWeight">−</button><input id="nextWeightInput" type="number" inputmode="decimal" value="${suggested||""}"><button type="button" id="plusWeight">+</button></div></label><div class="small muted" style="margin-top:8px">You can lower or raise this before accepting.</div></div><div class="stack"><button class="btn green" id="acceptRec">Accept Weight & Next Exercise</button><button class="btn outline" id="keepWeight">Keep Current Weight</button></div>`);
+  $("#minusWeight").onclick=()=>{$("#nextWeightInput").value=Math.max(0,(Number($("#nextWeightInput").value)||0)-5)};
+  $("#plusWeight").onclick=()=>{$("#nextWeightInput").value=(Number($("#nextWeightInput").value)||0)+5};
+  $("#acceptRec").onclick=()=>{state.settings[ex.name].weight=$("#nextWeightInput").value;ex.acceptedNextWeight=$("#nextWeightInput").value;saveState();$("#modal").close();advanceExercise()};
+  $("#keepWeight").onclick=()=>{state.settings[ex.name].weight=ex.weight;ex.acceptedNextWeight=ex.weight;saveState();$("#modal").close();advanceExercise()};
 }
 function nextWeight(w,dir){const n=Number(w);return Number.isFinite(n)&&n?String(Math.max(0,n+dir*5)):w}
 function advanceExercise(){
@@ -235,15 +247,32 @@ function renderSummary(){
   <button class="btn blue" id="appleEntry">Enter Apple Watch Data</button>`;
   $("#appleEntry").onclick=()=>openAppleModal(w);
 }
-function openAppleModal(w){
+function openAppleModal(w,fromHistory=false){
   openModal("Apple Watch Data",`<div class="stack">
-    <label>Workout type<select id="awType"><option>Traditional Strength Training</option><option>Indoor Cycle</option><option>Outdoor Walk</option><option>Indoor Walk</option><option>Elliptical</option></select></label>
+    <label>Workout type<select id="awType"><option ${w.apple?.type==="Traditional Strength Training"?"selected":""}>Traditional Strength Training</option><option ${w.apple?.type==="Indoor Cycle"?"selected":""}>Indoor Cycle</option><option ${w.apple?.type==="Outdoor Walk"?"selected":""}>Outdoor Walk</option><option ${w.apple?.type==="Indoor Walk"?"selected":""}>Indoor Walk</option><option ${w.apple?.type==="Elliptical"?"selected":""}>Elliptical</option></select></label>
     <div class="form-grid"><label>Start time<input id="awStart" type="time" value="${new Date(w.startTs).toTimeString().slice(0,5)}"></label><label>End time<input id="awEnd" type="time" value="${new Date(w.endTs).toTimeString().slice(0,5)}"></label></div>
-    <div class="form-grid"><label>Active calories<input id="awActive" type="number"></label><label>Total calories<input id="awTotal" type="number"></label></div>
-    <div class="form-grid"><label>Average HR<input id="awAvg" type="number"></label><label>Heart-rate range<input id="awRange" placeholder="96–156"></label></div>
-    <label>Apple Watch effort (1–10)<input id="awEffort" type="number" min="1" max="10"></label>
+    <div class="form-grid"><label>Active calories<input id="awActive" type="number" value="${w.apple?.activeCalories||""}"></label><label>Total calories<input id="awTotal" type="number" value="${w.apple?.totalCalories||""}"></label></div>
+    <div class="form-grid"><label>Average HR<input id="awAvg" type="number" value="${w.apple?.avgHR||""}"></label><label>Heart-rate range<input id="awRange" placeholder="96–156" value="${w.apple?.range||""}"></label></div>
+    <label>Apple Watch effort (1–10)<input id="awEffort" type="number" min="1" max="10" value="${w.apple?.effort||""}"></label>
     <button class="btn blue" id="saveApple">Save Apple Watch Data</button></div>`);
-  $("#saveApple").onclick=()=>{w.apple={type:$("#awType").value,start:$("#awStart").value,end:$("#awEnd").value,activeCalories:$("#awActive").value,totalCalories:$("#awTotal").value,avgHR:$("#awAvg").value,range:$("#awRange").value,effort:$("#awEffort").value};saveState();$("#modal").close();toast("Apple Watch data saved");navigate("dashboard")};
+  $("#saveApple").onclick=()=>{w.apple={type:$("#awType").value,start:$("#awStart").value,end:$("#awEnd").value,activeCalories:$("#awActive").value,totalCalories:$("#awTotal").value,avgHR:$("#awAvg").value,range:$("#awRange").value,effort:$("#awEffort").value};saveState();$("#modal").close();toast("Apple Watch data saved");navigate(fromHistory?"history":"dashboard")};
+}
+function openEditWorkout(i){
+  const w=state.workouts[i];
+  if(w.type==="cardio"){
+    openModal("Edit Cardio Workout",`<div class="stack"><label>Date<input id="eDate" type="date" value="${w.date}"></label><label>Activity<select id="eType">${["Recumbent Bike","Walk","Elliptical","Combination"].map(x=>`<option ${w.activity===x?"selected":""}>${x}</option>`).join("")}</select></label><div class="form-grid"><label>Duration (minutes)<input id="eDur" type="number" value="${Math.round((w.durationMs||0)/60000)}"></label><label>Distance<input id="eDist" type="number" step=".01" value="${w.distance||""}"></label></div><div class="form-grid"><label>Resistance / level<input id="eLevel" value="${w.level||""}"></label><label>Pace / speed<input id="ePace" value="${w.pace||""}"></label></div><label>Notes<textarea id="eNotes">${w.notes||""}</textarea></label><button class="btn blue" id="saveEdit">Save Changes</button><button class="btn red" id="deleteEdit">Delete Workout</button></div>`);
+    $("#saveEdit").onclick=()=>{Object.assign(w,{date:$("#eDate").value,activity:$("#eType").value,durationMs:(Number($("#eDur").value)||0)*60000,distance:$("#eDist").value,level:$("#eLevel").value,pace:$("#ePace").value,notes:$("#eNotes").value});saveState();$("#modal").close();renderHistory()};
+  }else{
+    openModal("Edit Strength Workout",`<div class="stack"><label>Date<input id="eDate" type="date" value="${w.date}"></label><label>Duration (minutes)<input id="eDur" type="number" value="${Math.round((w.durationMs||0)/60000)}"></label><div class="small muted">Edit any completed or skipped exercise below.</div>${w.exercises.map((e,ei)=>`<button class="btn ${e.status==="skipped"?"purple":e.status==="done"?"green":"outline"} edit-hist-ex" data-ei="${ei}">${ei+1}. ${e.name} — ${e.status}</button>`).join("")}<button class="btn blue" id="saveEdit">Save Workout Details</button><button class="btn red" id="deleteEdit">Delete Workout</button></div>`);
+    document.querySelectorAll(".edit-hist-ex").forEach(b=>b.onclick=()=>openHistoricalExerciseEditor(i,Number(b.dataset.ei)));
+    $("#saveEdit").onclick=()=>{w.date=$("#eDate").value;w.durationMs=(Number($("#eDur").value)||0)*60000;w.completed=w.exercises.filter(e=>e.status==="done").length;saveState();$("#modal").close();renderHistory()};
+  }
+  $("#deleteEdit").onclick=()=>{if(confirm("Delete this workout?")){state.workouts.splice(i,1);saveState();$("#modal").close();renderHistory()}};
+}
+function openHistoricalExerciseEditor(workoutIndex,exerciseIndex){
+  const w=state.workouts[workoutIndex],ex=w.exercises[exerciseIndex];
+  openModal(`Edit ${ex.name}`,`<div class="stack"><label>Status<select id="hxStatus"><option value="done" ${ex.status==="done"?"selected":""}>Completed</option><option value="skipped" ${ex.status==="skipped"?"selected":""}>Skipped</option><option value="not-started" ${ex.status==="not-started"?"selected":""}>Not started</option></select></label><label>Weight<input id="hxWeight" type="number" value="${ex.weight||""}"></label><div class="form-grid">${[0,1,2].map(s=>`<label>Set ${s+1} reps<input class="hxRep" data-s="${s}" type="number" value="${ex.reps[s]||""}"></label>`).join("")}</div><label>Effort<select id="hxEffort">${["Easy","Good","Hard","Very Hard"].map(x=>`<option ${ex.effort===x?"selected":""}>${x}</option>`).join("")}</select></label><label>Pain<select id="hxPain">${["None","Mild","Moderate","Severe"].map(x=>`<option ${ex.pain===x?"selected":""}>${x}</option>`).join("")}</select></label><label>Notes<textarea id="hxNotes">${ex.notes||""}</textarea></label><button class="btn blue" id="saveHx">Save Exercise</button></div>`);
+  $("#saveHx").onclick=()=>{ex.status=$("#hxStatus").value;ex.weight=$("#hxWeight").value;ex.reps=[...document.querySelectorAll(".hxRep")].map(x=>x.value);ex.effort=$("#hxEffort").value;ex.pain=$("#hxPain").value;ex.notes=$("#hxNotes").value;ex.recommendation=ex.status==="done"?recommendation(ex):"";w.completed=w.exercises.filter(x=>x.status==="done").length;saveState();$("#modal").close();toast("Exercise updated");renderHistory()};
 }
 function openCardioModal(){
   openModal("Add Cardio Workout",`<div class="stack">
@@ -259,19 +288,21 @@ function openCardioModal(){
 }
 function openSettingsModal(name){
   const s=state.settings[name];
-  openModal(`${name} Settings`,`<div class="stack"><div class="form-grid"><label>Seat<input id="sSeat" value="${s.seat}"></label><label>Back pad<input id="sBack" value="${s.backPad}"></label></div><div class="form-grid"><label>Start position<input id="sStart" value="${s.start}"></label><label>Other<input id="sOther" value="${s.other}"></label></div><button class="btn blue" id="saveSettings">Save Settings</button></div>`);
-  $("#saveSettings").onclick=()=>{Object.assign(s,{seat:$("#sSeat").value,backPad:$("#sBack").value,start:$("#sStart").value,other:$("#sOther").value});saveState();$("#modal").close();renderExerciseEntry()};
+  openModal(`${name} Settings`,`<div class="stack"><div class="form-grid"><label>Seat<input id="sSeat" value="${s.seat||""}"></label><label>Back pad<input id="sBack" value="${s.backPad||""}"></label></div><div class="form-grid"><label>Leg setting<input id="sLeg" value="${s.leg||""}"></label><label>Start position<input id="sStart" value="${s.start||""}"></label></div><label>Other<input id="sOther" value="${s.other||""}"></label><button class="btn blue" id="saveSettings">Save Settings</button></div>`);
+  $("#saveSettings").onclick=()=>{Object.assign(s,{seat:$("#sSeat").value,backPad:$("#sBack").value,leg:$("#sLeg").value,start:$("#sStart").value,other:$("#sOther").value});saveState();$("#modal").close();currentScreen==="exercise"?renderExerciseEntry():renderExercises()};
 }
 function openJumpModal(){
   const w=state.activeWorkout;
-  openModal("Jump to Exercise",`<div class="stack">${w.exercises.map((e,i)=>`<button class="btn ${e.status==="done"?"green":"outline"} jump" data-i="${i}">${i+1}. ${e.name}</button>`).join("")}</div>`);
+  openModal("Jump to Exercise",`<div class="stack">${w.exercises.map((e,i)=>`<button class="btn ${e.status==="done"?"green":"outline"} jump" data-i="${i}">${i+1}. ${e.name}${e.status==="skipped"?" — SKIPPED":e.status==="done"?" — COMPLETE":""}</button>`).join("")}</div>`);
   document.querySelectorAll(".jump").forEach(b=>b.onclick=()=>{$("#modal").close();openExercise(Number(b.dataset.i))});
 }
 function openModal(title,html){$("#modalTitle").textContent=title;$("#modalBody").innerHTML=html;$("#modal").showModal()}
 function renderHistory(){
   setHeader("History","Saved workouts");
-  const rows=[...state.workouts].reverse();
-  screen.innerHTML=rows.length?rows.map(w=>`<div class="card"><div class="row"><div><strong>${w.type==="strength"?"Strength":w.activity||"Cardio"}</strong><div class="small muted">${w.date}</div></div><div style="text-align:right"><strong>${Math.round((w.durationMs||0)/60000)} min</strong><div class="small muted">${w.apple?.activeCalories||0} active cal</div></div></div></div>`).join(""):`<div class="card muted">No workouts recorded yet.</div>`;
+  const rows=[...state.workouts].map((w,i)=>({w,i})).reverse();
+  screen.innerHTML=rows.length?rows.map(({w,i})=>`<div class="card"><div class="row"><div><strong>${w.type==="strength"?"Strength":w.activity||"Cardio"}</strong><div class="small muted">${w.date}</div></div><div style="text-align:right"><strong>${Math.round((w.durationMs||0)/60000)} min</strong><div class="small muted">${w.apple?.activeCalories||0} active cal</div></div></div><div class="btn-row" style="margin-top:12px"><button class="btn outline edit-workout" data-i="${i}">Edit Workout</button>${w.type==="strength"?`<button class="btn blue apple-workout" data-i="${i}">${w.apple?"Edit":"Add"} Apple Watch</button>`:""}</div></div>`).join(""):`<div class="card muted">No workouts recorded yet.</div>`;
+  document.querySelectorAll(".edit-workout").forEach(b=>b.onclick=()=>openEditWorkout(Number(b.dataset.i)));
+  document.querySelectorAll(".apple-workout").forEach(b=>b.onclick=()=>openAppleModal(state.workouts[Number(b.dataset.i)],true));
 }
 function renderExercises(){
   setHeader("Exercises","Current weights and settings");
@@ -281,7 +312,8 @@ function renderExercises(){
 function renderProgress(){
   setHeader("Progress","Strength trends");
   const strength=state.workouts.filter(w=>w.type==="strength");
-  screen.innerHTML=`<div class="card"><h3>Overview</h3><div class="metric-grid"><div class="metric"><div class="small muted">Strength workouts</div><div class="value">${strength.length}</div></div><div class="metric"><div class="small muted">Total sets</div><div class="value">${strength.reduce((s,w)=>s+w.exercises.filter(e=>e.status==="done").length*3,0)}</div></div></div></div>`+
+  const pending=EXERCISES.map(e=>({name:e.name,weight:state.settings[e.name].weight,last:[...strength].reverse().flatMap(w=>w.exercises).find(x=>x.name===e.name&&x.recommendation)}));
+  screen.innerHTML=`<div class="card"><h3>Overview</h3><div class="metric-grid"><div class="metric"><div class="small muted">Strength workouts</div><div class="value">${strength.length}</div></div><div class="metric"><div class="small muted">Total sets</div><div class="value">${strength.reduce((s,w)=>s+w.exercises.filter(e=>e.status==="done").length*3,0)}</div></div></div></div><div class="card"><h3>Next-Workout Weight Review</h3><div class="small muted" style="margin-bottom:10px">This shows the accepted weight currently stored for each exercise.</div>${pending.map(p=>`<div class="row review-row"><span>${p.name}</span><span><strong>${p.weight||"—"}${p.weight?" lb":""}</strong>${p.last?`<div class="small muted">${p.last.recommendation}</div>`:""}</span></div>`).join("")}</div>`+
   EXERCISES.map(e=>{const hist=strength.flatMap(w=>w.exercises.filter(x=>x.name===e.name&&x.status==="done").map(x=>({date:w.date,weight:x.weight,reps:x.reps}))).slice(-3);return `<div class="card"><strong>${e.name}</strong>${hist.length?hist.map(h=>`<div class="row small" style="margin-top:8px"><span>${h.date}</span><span>${h.weight||"—"} lb • ${h.reps.join("/")}</span></div>`).join(""):`<div class="small muted" style="margin-top:8px">No completed sets yet.</div>`}</div>`}).join("");
 }
 function renderMore(){

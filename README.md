@@ -55,3 +55,13 @@ Use **More → Export Spreadsheet CSV**. The CSV uses one row per strength set a
 The app does not directly import Apple Health or Apple Watch data. Those values are entered manually after each workout. Direct HealthKit integration requires a native iPhone app.
 
 
+## Revision 2 additions
+- Audible three-tone timer alert plus vibration when supported
+- Next-workout weight review in Progress
+- Adjustable accepted recommendation weight
+- Leg-position machine setting
+- Jump-back access to skipped exercises
+- Editable saved workouts
+- Apple Watch data can be added or edited later from History
+
+Note: iPhone may restrict sound/vibration when the PWA is backgrounded or the screen is locked.
