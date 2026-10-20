@@ -132,29 +132,19 @@ function startStrength(){
   saveState(); currentScreen="strength"; render();
 }
 function renderStrengthList(){
-  const w=state.activeWorkout;if(!w){navigate("dashboard");return}
-  const done=w.exercises.filter(e=>e.status==="done").length;
-  setHeader("Strength Workout",`${fmtDate(new Date(w.startTs))} • ${fmtTime(w.startTs)}`,true);
-  screen.innerHTML=`
-    <div class="card">
-      <div class="metric-grid">
-        <div class="metric"><div class="small muted">Completed</div><div class="value">${done}/${w.exercises.length}</div></div>
-        <div class="metric"><div class="small muted">Elapsed</div><div class="value" id="elapsed">${durationText(Date.now()-w.startTs)}</div></div>
-      </div>
-    </div>
-    <div class="card" style="padding:0">${w.exercises.map((e,i)=>`
-      <div class="exercise-item ${i===w.currentIndex?"current":""}" data-ex-index="${i}">
-        <div>${i+1}</div><div><strong>${e.name}</strong><div class="small muted">${e.weight?`${e.weight} lb • `:""}3 sets</div></div>
-        <div class="status-dot ${e.status==="done"?"done":e.status==="skipped"?"skipped":i===w.currentIndex?"current":""}">${e.status==="done"?"✓":e.status==="skipped"?"–":i===w.currentIndex?"▶":""}</div>
-      </div>`).join("")}</div>
-    <div class="btn-row"><button class="btn outline" id="jumpBtn">Jump to Exercise</button><button class="btn red" id="endWorkout">End Workout</button></div>`;
-  document.querySelectorAll("[data-ex-index]").forEach(el=>el.onclick=()=>openExercise(Number(el.dataset.exIndex)));
-  $("#jumpBtn").onclick=()=>openJumpModal();
-  $("#endWorkout").onclick=()=>finishWorkout(true);
-  const id=setInterval(()=>{const e=$("#elapsed");if(e)e.textContent=durationText(Date.now()-w.startTs);else clearInterval(id)},1000);
+ const w=state.activeWorkout;if(!w){navigate("dashboard");return}
+ const done=w.exercises.filter(e=>e.status==="done").length;
+ setHeader("Strength Workout",`${fmtDate(new Date(w.startTs))} • ${fmtTime(w.startTs)}`,true);
+ screen.innerHTML=`<div class="card"><div class="metric-grid"><div class="metric"><div class="small muted">Exercises Completed</div><div class="value">${done}/${w.exercises.length}</div></div><div class="metric"><div class="small muted">Elapsed</div><div class="value" id="elapsed">${durationText(Date.now()-w.startTs)}</div></div></div></div>
+ <div class="card" style="padding:0">${workoutItems().map((item,n)=>`<div class="exercise-item ${item.current?"current":""}" data-ex-index="${item.indices[0]}"><div>${n+1}</div><div><strong>${item.title}</strong><div class="small muted">${item.pair?`${item.pair.labels.join(" → ")} • 3 rounds`:"3 sets"}</div></div><div class="status-dot ${item.status==="done"?"done":item.status==="skipped"?"skipped":item.current?"current":""}">${item.status==="done"?"✓":item.status==="skipped"?"–":item.current?"▶":""}</div></div>`).join("")}</div>
+ <div class="btn-row"><button class="btn outline" id="jumpBtn">Jump to Exercise</button><button class="btn red" id="endWorkout">End Workout</button></div>`;
+ document.querySelectorAll("[data-ex-index]").forEach(el=>el.onclick=()=>openExercise(Number(el.dataset.exIndex)));
+ $("#jumpBtn").onclick=openJumpModal;$("#endWorkout").onclick=()=>finishWorkout(true);
+ const id=setInterval(()=>{const e=$("#elapsed");if(e)e.textContent=durationText(Date.now()-w.startTs);else clearInterval(id)},1000);
 }
 function openExercise(i){state.activeWorkout.currentIndex=i;saveState();currentScreen="exercise";render()}
 function renderExerciseEntry(){
+  const pair=workoutPair(state.activeWorkout?.currentIndex);if(pair){renderPairedEntry(pair);return}
   const w=state.activeWorkout, i=w.currentIndex, ex=w.exercises[i], settings=state.settings[ex.name];
   setHeader(ex.name,`${i+1} of ${w.exercises.length}`,true);
   screen.innerHTML=`
@@ -218,17 +208,17 @@ function completeExercise(){
   ex.status="done";ex.recommendation=recommendation(ex);saveState();
   openResultModal(ex);
 }
-function openResultModal(ex){
+function openResultModal(ex,onNext=advanceExercise){
   const cls=ex.recommendation.toLowerCase();
   const suggested=ex.recommendation==="Increase"?nextWeight(ex.weight,1):ex.recommendation==="Decrease"?nextWeight(ex.weight,-1):ex.weight;
-  openModal("Exercise Result",`<div class="recommendation ${cls}">
+  openModal(`${ex.name} Result`,`<div class="recommendation ${cls}">
     <div class="small">RECOMMENDATION</div><div class="big-number">${ex.recommendation.toUpperCase()}</div>
     <div>${ex.recommendation==="Increase"?"You met the increase rule. Review and choose the weight for your next workout.":ex.recommendation==="Decrease"?"A set was below 5 reps. Review and choose a lower weight for your next workout.":ex.recommendation==="Review"?"Pain, skipped work, or incomplete data means no automatic increase.":"The progression rule suggests keeping the same weight."}</div>
-  </div><div class="card" style="margin-top:14px"><label>Weight for next workout<div class="weight-stepper"><button type="button" id="minusWeight">−</button><input id="nextWeightInput" type="number" inputmode="decimal" value="${suggested||""}"><button type="button" id="plusWeight">+</button></div></label><div class="small muted" style="margin-top:8px">You can lower or raise this before accepting.</div></div><div class="stack"><button class="btn green" id="acceptRec">Accept Weight & Next Exercise</button><button class="btn outline" id="keepWeight">Keep Current Weight</button></div>`);
+  </div><div class="card" style="margin-top:14px"><label>Weight for next workout<div class="weight-stepper"><button type="button" id="minusWeight">−</button><input id="nextWeightInput" type="number" inputmode="decimal" value="${suggested||""}"><button type="button" id="plusWeight">+</button></div></label><div class="small muted" style="margin-top:8px">You can lower or raise this before accepting.</div></div><div class="stack"><button class="btn green" id="acceptRec">Accept Weight & Continue</button><button class="btn outline" id="keepWeight">Keep Current Weight</button></div>`);
   $("#minusWeight").onclick=()=>{$("#nextWeightInput").value=Math.max(0,(Number($("#nextWeightInput").value)||0)-5)};
   $("#plusWeight").onclick=()=>{$("#nextWeightInput").value=(Number($("#nextWeightInput").value)||0)+5};
-  $("#acceptRec").onclick=()=>{state.settings[ex.name].weight=$("#nextWeightInput").value;ex.acceptedNextWeight=$("#nextWeightInput").value;saveState();$("#modal").close();advanceExercise()};
-  $("#keepWeight").onclick=()=>{state.settings[ex.name].weight=ex.weight;ex.acceptedNextWeight=ex.weight;saveState();$("#modal").close();advanceExercise()};
+  $("#acceptRec").onclick=()=>{state.settings[ex.name].weight=$("#nextWeightInput").value;ex.acceptedNextWeight=$("#nextWeightInput").value;saveState();$("#modal").close();onNext()};
+  $("#keepWeight").onclick=()=>{state.settings[ex.name].weight=ex.weight;ex.acceptedNextWeight=ex.weight;saveState();$("#modal").close();onNext()};
 }
 function nextWeight(w,dir){const n=Number(w);return Number.isFinite(n)&&n?String(Math.max(0,n+dir*5)):w}
 function advanceExercise(){
@@ -306,9 +296,8 @@ function openSettingsModal(name){
   $("#saveSettings").onclick=()=>{Object.assign(s,{seat:$("#sSeat").value,backPad:$("#sBack").value,leg:$("#sLeg").value,start:$("#sStart").value,other:$("#sOther").value});saveState();$("#modal").close();currentScreen==="exercise"?renderExerciseEntry():renderExercises()};
 }
 function openJumpModal(){
-  const w=state.activeWorkout;
-  openModal("Jump to Exercise",`<div class="stack">${w.exercises.map((e,i)=>`<button class="btn ${e.status==="done"?"green":"outline"} jump" data-i="${i}">${i+1}. ${e.name}${e.status==="skipped"?" — SKIPPED":e.status==="done"?" — COMPLETE":""}</button>`).join("")}</div>`);
-  document.querySelectorAll(".jump").forEach(b=>b.onclick=()=>{$("#modal").close();openExercise(Number(b.dataset.i))});
+ openModal("Jump to Exercise",`<div class="stack">${workoutItems().map((item,i)=>`<button class="btn ${item.status==="done"?"green":"outline"} jump" data-i="${item.indices[0]}">${i+1}. ${item.title}${item.status==="done"?" — COMPLETE":item.status==="skipped"?" — SKIPPED":""}</button>`).join("")}</div>`);
+ document.querySelectorAll(".jump").forEach(b=>b.onclick=()=>{$("#modal").close();openExercise(Number(b.dataset.i))});
 }
 function openModal(title,html){$("#modalTitle").textContent=title;$("#modalBody").innerHTML=html;$("#modal").showModal()}
 function renderHistory(){
@@ -321,7 +310,7 @@ function renderHistory(){
 function renderExercises(){
  setHeader("Exercises","Choose machines and workout order");
  const items=orderedExercises();
- screen.innerHTML=`<div class="card"><strong>${visibleExercises().length} of ${items.length} machines shown</strong><p class="small muted">Use the arrows to change workout order. Hidden machines keep their weights, settings, and history. Changes apply to your next new workout.</p></div>`+
+ screen.innerHTML=`<div class="card"><strong>${visibleExercises().length} of ${items.length} machines shown</strong><p class="small muted">Use the arrows to change workout order. Hidden machines keep their weights, settings, and history. Changes apply to your next new workout. Leg Press + Calf Raises and Right + Left Leg Extension share a workout screen when both are shown.</p></div>`+
  items.map((e,i)=>{const s=state.settings[e.name],hidden=state.hiddenExercises.includes(e.name);return `<div class="card ${hidden?"machine-hidden":""}">
  <div class="row"><div><strong>${e.name}</strong><div class="small muted">${e.group} • ${hidden?"Hidden":"Shown"}</div></div><strong>${s.weight||"—"}${s.weight?" lb":""}</strong></div>
  <div class="machine-controls">
@@ -377,3 +366,73 @@ $("#backBtn").onclick=()=>{if(currentScreen==="exercise")currentScreen="strength
 $("#menuBtn").onclick=()=>navigate("more");
 if("serviceWorker" in navigator)navigator.serviceWorker.register("sw.js");
 render();
+
+function workoutPair(index){
+ const w=state.activeWorkout;if(!w)return null;
+ const pairs=[
+ {title:"Leg Press + Calf Raises",names:["Leg Press","Calf Raises"],labels:["Leg Press","Calf Raises"]},
+ {title:"Single-Leg Extension",names:["Leg Extension (Right)","Leg Extension (Left)"],labels:["Right Leg","Left Leg"]}
+ ];
+ const pair=pairs.find(p=>p.names.includes(w.exercises[index]?.name));
+ if(!pair)return null;
+ const indices=pair.names.map(name=>w.exercises.findIndex(e=>e.name===name));
+ return indices.every(i=>i>=0)?{...pair,indices}:null;
+}
+function workoutItems(){
+ const w=state.activeWorkout,seen=new Set(),items=[];
+ w.exercises.forEach((e,i)=>{
+ if(seen.has(i))return;
+ const pair=workoutPair(i),indices=pair?pair.indices:[i];
+ indices.forEach(n=>seen.add(n));
+ const statuses=indices.map(n=>w.exercises[n].status);
+ items.push({indices,title:pair?pair.title:e.name,pair,
+ status:statuses.every(s=>s==="done")?"done":statuses.every(s=>s==="skipped")?"skipped":"not-started",
+ current:indices.includes(w.currentIndex)});
+ });
+ return items;
+}
+function pairRepsValid(pair,round=null){
+ return pair.indices.every(i=>(round===null?state.activeWorkout.exercises[i].reps:[state.activeWorkout.exercises[i].reps[round]]).every(r=>String(r).trim()!==""&&Number.isFinite(Number(r))&&Number(r)>=0));
+}
+function capturePairInputs(pair){
+ pair.indices.forEach((index,p)=>{
+ const ex=state.activeWorkout.exercises[index];
+ ex.weight=$(`#pairWeight${p}`).value;ex.notes=$(`#pairNotes${p}`).value;
+ ex.effort=$(`#pairEffort${p}`).value;ex.pain=$(`#pairPain${p}`).value;
+ ex.reps=[0,1,2].map(round=>$(`#pairRep${p}_${round}`).value);
+ });
+ saveState();
+}
+function renderPairedEntry(pair){
+ const w=state.activeWorkout;
+ setHeader(pair.title,"3 rounds • Alternate both exercises",true);
+ const escape=value=>String(value??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;");
+ screen.innerHTML=`<div class="card"><strong>${pair.labels[0]} → ${pair.labels[1]} → Rest</strong><p class="small muted">Complete both exercises in each round before starting the next round. Weights and reps are saved separately.</p>
+ <div class="pair-columns">${pair.indices.map((index,p)=>{const ex=w.exercises[index];return `<div class="stack"><label>${pair.labels[p]} weight (lb)<input class="pair-input" id="pairWeight${p}" type="number" inputmode="decimal" min="0" value="${escape(ex.weight)}"></label><button class="btn outline pair-settings" data-p="${p}">Machine Settings</button></div>`}).join("")}</div></div>
+ ${[0,1,2].map(round=>`<div class="card"><h3>Round ${round+1}</h3><div class="pair-columns">${pair.indices.map((index,p)=>`<label>${p+1}. ${pair.labels[p]} reps<input class="pair-input rep-input" id="pairRep${p}_${round}" type="number" inputmode="numeric" min="0" step="1" value="${escape(w.exercises[index].reps[round])}"></label>`).join("")}</div>
+ <button class="btn ${round<2?"blue":"gray"} save-round" data-round="${round}" style="margin-top:12px">${round<2?"Save Round & Start 20-sec Rest":"Save Round 3"}</button><div id="pairTimer${round}"></div></div>`).join("")}
+ ${pair.indices.map((index,p)=>{const ex=w.exercises[index];return `<div class="card stack"><h3>${pair.labels[p]} feedback</h3>
+ <div class="pair-columns"><label>Effort<select class="pair-input" id="pairEffort${p}">${["Easy","Good","Hard","Very Hard"].map(v=>`<option ${ex.effort===v?"selected":""}>${v}</option>`).join("")}</select></label>
+ <label>Pain / discomfort<select class="pair-input" id="pairPain${p}">${["None","Mild","Moderate","Severe"].map(v=>`<option ${ex.pain===v?"selected":""}>${v}</option>`).join("")}</select></label></div>
+ <label>Notes<textarea class="pair-input" id="pairNotes${p}" rows="2">${escape(ex.notes)}</textarea></label></div>`}).join("")}
+ <div class="btn-row"><button class="btn outline" id="skipPair">Skip Remaining Pair</button><button class="btn green" id="completePair">Complete Both Exercises</button></div>`;
+ document.querySelectorAll(".pair-input").forEach(el=>el.oninput=()=>capturePairInputs(pair));
+ document.querySelectorAll(".pair-settings").forEach(b=>b.onclick=()=>{capturePairInputs(pair);stopTimer();openSettingsModal(pair.names[Number(b.dataset.p)])});
+ document.querySelectorAll(".save-round").forEach(b=>b.onclick=()=>{
+ capturePairInputs(pair);const round=Number(b.dataset.round);
+ if(!pairRepsValid(pair,round)){toast("Enter reps for both exercises in this round");return}
+ if(round<2){
+ stopTimer();[0,1,2].forEach(r=>$(`#pairTimer${r}`).innerHTML="");
+ $(`#pairTimer${round}`).innerHTML='<div id="timerArea"></div>';startTimer();
+ }else{toast("Round 3 saved")}
+ });
+ $("#skipPair").onclick=()=>{capturePairInputs(pair);pair.indices.forEach(i=>{if(w.exercises[i].status!=="done")w.exercises[i].status="skipped"});advanceExercise()};
+ $("#completePair").onclick=()=>{
+ capturePairInputs(pair);
+ if(!pairRepsValid(pair)){toast("Enter all three rounds for both exercises or skip");return}
+ stopTimer();
+ pair.indices.forEach(i=>{const ex=w.exercises[i];ex.status="done";ex.recommendation=recommendation(ex)});saveState();
+ const review=p=>{if(p>=pair.indices.length){advanceExercise();return}openResultModal(w.exercises[pair.indices[p]],()=>review(p+1))};
+ review(0);
+ };
+}
