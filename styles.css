@@ -82,3 +82,9 @@ th,td{padding:9px;border-bottom:1px solid var(--line);text-align:left;white-spac
 .weight-stepper input{text-align:center;font-size:24px;font-weight:800}
 .review-row{padding:9px 0;border-bottom:1px solid var(--line)}
 .review-row:last-child{border-bottom:0}
+
+.machine-controls{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) 44px 44px;gap:8px;margin-top:12px}
+.machine-controls .btn{padding:12px 6px;min-height:44px}
+.machine-hidden{background:#f1f3f6;border-style:dashed}
+button:disabled{opacity:.35;cursor:default}
+button:focus-visible{outline:3px solid var(--blue);outline-offset:3px}

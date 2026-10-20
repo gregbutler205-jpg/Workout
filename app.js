@@ -15,10 +15,16 @@ const EXERCISES = [
   {name:"Arm Curl", group:"Upper Body"},
   {name:"Back Extension", group:"Core / Trunk"},
   {name:"Abdominal", group:"Core / Trunk"},
+  {name:"Lat Pulldown", group:"Upper Body"},
+  {name:"Mid Row", group:"Upper Body"},
+  {name:"Shoulder Press", group:"Upper Body"},
+  {name:"Calf Raises", group:"Lower Body"},
 ];
 
 const defaultState = {
-  version:1,
+  version:2,
+  exerciseOrder:EXERCISES.map(e=>e.name),
+  hiddenExercises:[],
   settings:Object.fromEntries(EXERCISES.map(e=>[e.name,{weight:"",seat:"",backPad:"",leg:"",start:"",other:""}])),
   weekly:{},
   workouts:[],
@@ -33,9 +39,17 @@ const screen = $("#screen");
 function loadState(){
   try{
     const saved = JSON.parse(localStorage.getItem("strengthTrackerState"));
-    return saved ? {...defaultState,...saved,settings:{...defaultState.settings,...saved.settings}} : structuredClone(defaultState);
+    return normalizeState(saved);
   }catch{return structuredClone(defaultState)}
 }
+function normalizeState(saved){
+ const base=structuredClone(defaultState);
+ if(!saved||typeof saved!=="object"||Array.isArray(saved))return base;
+ const names=EXERCISES.map(e=>e.name),order=Array.isArray(saved.exerciseOrder)?saved.exerciseOrder:[];
+ return {...base,...saved,version:2,settings:Object.fromEntries(names.map(name=>[name,{...base.settings[name],...saved.settings?.[name]}])),exerciseOrder:[...new Set([...order.filter(n=>names.includes(n)),...names])],hiddenExercises:[...new Set((Array.isArray(saved.hiddenExercises)?saved.hiddenExercises:[]).filter(n=>names.includes(n)))]};
+}
+function orderedExercises(){return state.exerciseOrder.map(name=>EXERCISES.find(e=>e.name===name))}
+function visibleExercises(){return orderedExercises().filter(e=>!state.hiddenExercises.includes(e.name))}
 function saveState(){localStorage.setItem("strengthTrackerState",JSON.stringify(state))}
 function isoDate(d=new Date()){return d.toISOString().slice(0,10)}
 function weekStart(date=new Date()){
@@ -113,26 +127,26 @@ function toggleDay(type,date){
 }
 function startStrength(){
   if(state.activeWorkout && confirm("Resume the unfinished strength workout?")){currentScreen="strength";render();return}
-  state.activeWorkout={id:crypto.randomUUID(),type:"strength",date:isoDate(),startTs:Date.now(),currentIndex:0,exercises:EXERCISES.map(e=>({name:e.name,status:"not-started",weight:state.settings[e.name].weight,reps:["","",""],effort:"Good",pain:"None",notes:"",recommendation:""}))};
+  if(!visibleExercises().length){toast("Show at least one machine in Exercises first");navigate("exercises");return}
+  state.activeWorkout={id:crypto.randomUUID(),type:"strength",date:isoDate(),startTs:Date.now(),currentIndex:0,exercises:visibleExercises().map(e=>({name:e.name,status:"not-started",weight:state.settings[e.name].weight,reps:["","",""],effort:"Good",pain:"None",notes:"",recommendation:""}))};
   saveState(); currentScreen="strength"; render();
 }
 function renderStrengthList(){
   const w=state.activeWorkout;if(!w){navigate("dashboard");return}
   const done=w.exercises.filter(e=>e.status==="done").length;
   setHeader("Strength Workout",`${fmtDate(new Date(w.startTs))} • ${fmtTime(w.startTs)}`,true);
-  const groups=[...new Set(EXERCISES.map(e=>e.group))];
   screen.innerHTML=`
     <div class="card">
       <div class="metric-grid">
-        <div class="metric"><div class="small muted">Completed</div><div class="value">${done}/16</div></div>
+        <div class="metric"><div class="small muted">Completed</div><div class="value">${done}/${w.exercises.length}</div></div>
         <div class="metric"><div class="small muted">Elapsed</div><div class="value" id="elapsed">${durationText(Date.now()-w.startTs)}</div></div>
       </div>
     </div>
-    ${groups.map(g=>`<div class="section-title">${g}</div><div class="card" style="padding:0">${w.exercises.map((e,i)=>EXERCISES[i].group===g?`
+    <div class="card" style="padding:0">${w.exercises.map((e,i)=>`
       <div class="exercise-item ${i===w.currentIndex?"current":""}" data-ex-index="${i}">
         <div>${i+1}</div><div><strong>${e.name}</strong><div class="small muted">${e.weight?`${e.weight} lb • `:""}3 sets</div></div>
         <div class="status-dot ${e.status==="done"?"done":e.status==="skipped"?"skipped":i===w.currentIndex?"current":""}">${e.status==="done"?"✓":e.status==="skipped"?"–":i===w.currentIndex?"▶":""}</div>
-      </div>`:"").join("")}</div>`).join("")}
+      </div>`).join("")}</div>
     <div class="btn-row"><button class="btn outline" id="jumpBtn">Jump to Exercise</button><button class="btn red" id="endWorkout">End Workout</button></div>`;
   document.querySelectorAll("[data-ex-index]").forEach(el=>el.onclick=()=>openExercise(Number(el.dataset.exIndex)));
   $("#jumpBtn").onclick=()=>openJumpModal();
@@ -142,7 +156,7 @@ function renderStrengthList(){
 function openExercise(i){state.activeWorkout.currentIndex=i;saveState();currentScreen="exercise";render()}
 function renderExerciseEntry(){
   const w=state.activeWorkout, i=w.currentIndex, ex=w.exercises[i], settings=state.settings[ex.name];
-  setHeader(ex.name,`${i+1} of 16`,true);
+  setHeader(ex.name,`${i+1} of ${w.exercises.length}`,true);
   screen.innerHTML=`
     <div class="card">
       <div class="row"><div><div class="small muted">Current Weight / Plate</div><div class="big-number"><input id="weight" type="number" inputmode="decimal" value="${ex.weight}" style="width:130px;font-size:30px;text-align:center"> lb</div></div>
@@ -239,7 +253,7 @@ function renderSummary(){
   screen.innerHTML=`<div class="card" style="text-align:center"><div style="font-size:58px">✅</div><h2>Workout Complete!</h2><div class="muted">${fmtTime(w.startTs)} – ${fmtTime(w.endTs)}</div></div>
   <div class="metric-grid">
     <div class="metric"><div class="small muted">Total Time</div><div class="value">${durationText(w.durationMs)}</div></div>
-    <div class="metric"><div class="small muted">Exercises</div><div class="value">${w.completed}/16</div></div>
+    <div class="metric"><div class="small muted">Exercises</div><div class="value">${w.completed}/${w.exercises.length}</div></div>
     <div class="metric"><div class="small muted">Total Sets</div><div class="value">${w.exercises.filter(e=>e.status==="done").length*3}</div></div>
     <div class="metric"><div class="small muted">Total Reps</div><div class="value">${reps}</div></div>
   </div>
@@ -305,9 +319,31 @@ function renderHistory(){
   document.querySelectorAll(".apple-workout").forEach(b=>b.onclick=()=>openAppleModal(state.workouts[Number(b.dataset.i)],true));
 }
 function renderExercises(){
-  setHeader("Exercises","Current weights and settings");
-  screen.innerHTML=EXERCISES.map(e=>{const s=state.settings[e.name];return `<div class="card"><div class="row"><div><strong>${e.name}</strong><div class="small muted">${e.group}</div></div><div><strong>${s.weight||"—"}${s.weight?" lb":""}</strong></div></div><button class="btn outline edit-ex" data-name="${e.name}" style="margin-top:10px">Edit Settings</button></div>`}).join("");
-  document.querySelectorAll(".edit-ex").forEach(b=>b.onclick=()=>openSettingsModal(b.dataset.name));
+ setHeader("Exercises","Choose machines and workout order");
+ const items=orderedExercises();
+ screen.innerHTML=`<div class="card"><strong>${visibleExercises().length} of ${items.length} machines shown</strong><p class="small muted">Use the arrows to change workout order. Hidden machines keep their weights, settings, and history. Changes apply to your next new workout.</p></div>`+
+ items.map((e,i)=>{const s=state.settings[e.name],hidden=state.hiddenExercises.includes(e.name);return `<div class="card ${hidden?"machine-hidden":""}">
+ <div class="row"><div><strong>${e.name}</strong><div class="small muted">${e.group} • ${hidden?"Hidden":"Shown"}</div></div><strong>${s.weight||"—"}${s.weight?" lb":""}</strong></div>
+ <div class="machine-controls">
+ <button class="btn outline edit-ex" data-name="${e.name}">Settings</button>
+ <button class="btn gray toggle-ex" data-name="${e.name}" aria-label="${hidden?"Show":"Hide"} ${e.name}">${hidden?"Show":"Hide"}</button>
+ <button class="btn gray move-ex" data-index="${i}" data-direction="-1" aria-label="Move ${e.name} up" ${i===0?"disabled":""}>↑</button>
+ <button class="btn gray move-ex" data-index="${i}" data-direction="1" aria-label="Move ${e.name} down" ${i===items.length-1?"disabled":""}>↓</button>
+ </div></div>`}).join("");
+ document.querySelectorAll(".edit-ex").forEach(b=>b.onclick=()=>openSettingsModal(b.dataset.name));
+ document.querySelectorAll(".toggle-ex").forEach(b=>b.onclick=()=>{
+ const name=b.dataset.name;
+ state.hiddenExercises=state.hiddenExercises.includes(name)?state.hiddenExercises.filter(n=>n!==name):[...state.hiddenExercises,name];
+ saveState();renderExercises();
+ [...document.querySelectorAll(".toggle-ex")].find(el=>el.dataset.name===name)?.focus({preventScroll:true});
+ });
+ document.querySelectorAll(".move-ex").forEach(b=>b.onclick=()=>{
+ const i=Number(b.dataset.index),next=i+Number(b.dataset.direction);
+ if(next<0||next>=state.exerciseOrder.length)return;
+ [state.exerciseOrder[i],state.exerciseOrder[next]]=[state.exerciseOrder[next],state.exerciseOrder[i]];
+ saveState();renderExercises();
+ document.querySelector(`.move-ex[data-index="${next}"][data-direction="${b.dataset.direction}"]`)?.focus({preventScroll:true});
+ });
 }
 function renderProgress(){
   setHeader("Progress","Strength trends");
@@ -334,7 +370,7 @@ function exportCSV(){
   downloadBlob(csv,"strength-cardio-workouts.csv","text/csv");
 }
 function exportJSON(){downloadBlob(JSON.stringify(state,null,2),"strength-tracker-backup.json","application/json")}
-function importJSON(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{state=JSON.parse(r.result);saveState();toast("Backup imported");renderMore()}catch{alert("That file could not be imported.")}};r.readAsText(f)}
+function importJSON(e){const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{state=normalizeState(JSON.parse(r.result));saveState();toast("Backup imported");renderMore()}catch{alert("That file could not be imported.")}};r.readAsText(f)}
 function downloadBlob(text,name,type){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 document.querySelectorAll(".nav-btn").forEach(b=>b.onclick=()=>navigate(b.dataset.screen));
 $("#backBtn").onclick=()=>{if(currentScreen==="exercise")currentScreen="strength";else if(currentScreen==="strength"||currentScreen==="summary")currentScreen="dashboard";else currentScreen="dashboard";render()};
